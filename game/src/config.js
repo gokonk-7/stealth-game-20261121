@@ -1,63 +1,45 @@
-// Shared tuning constants for Night at the Meridian Museum.
-// One job: every number the game balances on lives here.
-export const CANVAS_WIDTH = 1280;
-export const CANVAS_HEIGHT = 720;
-
-export const PLAYER_RADIUS = 12;
-export const PLAYER_WALK_SPEED = 130; // px per second
-export const PLAYER_SNEAK_SPEED = 70; // px per second, silent
-export const GUARD_RADIUS = 13;
-export const GUARD_CHASE_SPEED = 150; // px per second
-export const GUARD_CATCH_DISTANCE = 27; // touching the thief ends the run
-
-export const CONE_RANGE = 220; // guard vision cone length, px
-export const CONE_HALF_ANGLE = (32 * Math.PI) / 180; // guard vision cone half-angle
-export const CAMERA_RANGE = 260;
-export const CAMERA_HALF_ANGLE = (28 * Math.PI) / 180;
-
-export const SUSPICION_MAX = 100;
-export const SUSPICION_QUESTION = 50; // at this level the guard shows "?" and the edge pulses
-export const SUSPICION_DECAY = 12; // per second while unseen
-export const SUSPICION_RISE_BASE = 55; // per second at point-blank range, before factors
-export const LIGHT_FACTOR = 1.5; // standing in a light pool
-export const SHADOW_FACTOR = 0.6; // standing in shadow
-export const SNEAK_FACTOR = 0.6; // sneaking while seen
-export const ALARM_SUSPICION_FACTOR = 1.2; // alarm stage 1 multiplier
-export const ALARM_SPEED_FACTOR = 1.15; // alarm stage 1 guard speed multiplier
-export const ALARM_CONE_FACTOR = 1.1; // alarm stage 1 cone range multiplier
-
-export const CHASE_GIVE_UP_SECONDS = 3; // unseen this long and the guard returns to patrol
-export const PANEL_HOLD_SECONDS = 3; // stand by the panel this long to kill a camera
-export const PANEL_DISABLE_SECONDS = 8; // how long a disabled camera stays dark
-export const CAMERA_ALERT_COOLDOWN = 5; // seconds after a camera trips the alarm
-
-export const LOOT_SCORE = 150;
-export const GHOST_BONUS = 500;
-export const CAUGHT_PENALTY = 100;
-export const MAX_CAUGHT_PER_LEVEL = 3; // third catch restarts the level
+// Night at the Meridian Museum — shared constants.
+// One canvas, 1280x720. The HUD bar sits on top; the museum floor runs below it.
+export const W = 1280;
+export const H = 720;
+export const HUD_H = 56;
+export const THIEF_R = 13;
+export const THIEF_WALK = 132;
+export const THIEF_SNEAK = 68;
+export const GUARD_CHASE = 152;
+export const SUSPICION_DECAY = 12;
+export const SPOT_LINE = 50;
 
 export const COLORS = {
-  floorLight: '#b8a88a',
-  floorDark: '#a8977a',
-  floorTile: '#c4b49a',
-  wall: '#3d3348',
-  wallTop: '#574a68',
-  caseGlass: '#7fb3c8',
-  caseFrame: '#5d4a2f',
-  statue: '#9a938a',
-  column: '#8a7f74',
-  curtain: '#7a2e3a',
-  sarcophagus: '#6b5a34',
-  crate: '#6e5233',
-  lampLight: 'rgba(255, 196, 110, 0.20)',
-  moonLight: 'rgba(150, 190, 255, 0.16)',
-  shadow: 'rgba(10, 8, 24, 0.34)',
-  coneCalm: 'rgba(255, 176, 66, 0.20)',
-  coneAlert: 'rgba(255, 60, 50, 0.30)',
-  guardUniform: '#23202e',
-  guardTrim: '#e8d27a',
-  thiefCoat: '#26262e',
-  thiefScarf: '#c22e3d',
-  exitGlow: '#58d68d',
-  hudBar: '#17131f',
+  floorA: '#2b3040',
+  floorB: '#262b38',
+  floorLine: '#343a4c',
+  wall: '#14161d',
+  wallTop: '#3a4152',
+  caseWood: '#4a3220',
+  caseGlass: 'rgba(150,200,235,0.28)',
+  statue: '#7d8390',
+  column: '#8a8f9c',
+  curtain: '#6e1f2a',
+  sarcophagus: '#8a6d2f',
+  pedestal: '#3d3a33',
+  cone: 'rgba(255,178,66,0.20)',
+  coneEdge: 'rgba(255,190,90,0.45)',
+  coneHot: 'rgba(255,64,48,0.32)',
+  coneHotEdge: 'rgba(255,80,60,0.55)',
+  moon: 'rgba(150,190,255,0.10)',
+  lamp: 'rgba(255,205,120,0.12)',
+  shadow: 'rgba(0,0,0,0.34)',
+  exit: '#3ddc84',
+  exitGlow: 'rgba(61,220,132,0.25)',
+  thiefCoat: '#2b2f38',
+  thiefScarf: '#c22740',
+  guardBody: '#22262f',
+  guardTrim: '#c8cdd8',
+  hud: 'rgba(10,12,18,0.82)',
+  text: '#e8e6df',
+  dim: '#9aa0ae',
+  gold: '#e8c15a',
+  red: '#ff5040',
+  amber: '#ffb242',
 };

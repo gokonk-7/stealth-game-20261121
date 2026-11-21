@@ -1,92 +1,74 @@
-// Synthesized sound only: every effect is an oscillator or filtered noise
-// through WebAudio. No audio files, no network. Guard footsteps carry the
-// distance and direction of the guard relative to the thief, so you can hear
-// where a patrol is before you see its cone.
+// Synthesized sounds — WebAudio oscillators and filtered noise, no audio files.
+// Everything is a no-op until ensure() runs after the first key press or click,
+// so the game never touches audio before the player interacts.
 export function createAudio() {
   let ctx = null;
   let master = null;
   let muted = false;
 
   function ensure() {
-    if (ctx) return true;
+    if (ctx) {
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      return;
+    }
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;
       ctx = new AC();
       master = ctx.createGain();
-      master.gain.value = 0.5;
+      master.gain.value = muted ? 0 : 0.5;
       master.connect(ctx.destination);
-    } catch (_e) {
-      return false;
+    } catch (e) {
+      ctx = null;
     }
-    return true;
   }
 
-  function unlock() {
-    if (ensure() && ctx.state === 'suspended') ctx.resume();
-  }
-
-  function tone(freq, dur, type, vol, when = 0, slideTo = null) {
-    if (!ensure() || muted) return;
+  function tone(freq, dur, type, vol, when = 0, slideTo = 0) {
+    if (!ctx || !master) return;
     const t0 = ctx.currentTime + when;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t0);
-    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(vol, t0 + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + dur + 0.05);
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g);
+    g.connect(master);
+    o.start(t0);
+    o.stop(t0 + dur + 0.05);
   }
 
-  function thud(vol, pan, low) {
-    if (!ensure() || muted) return;
-    const t0 = ctx.currentTime;
-    const dur = 0.09;
-    const buffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 2;
-    }
+  function noiseBurst(dur, vol, freq, pan = 0) {
+    if (!ctx || !master) return;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
     const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = low;
-    const gain = ctx.createGain();
-    gain.gain.value = vol;
-    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    src.connect(filter);
-    filter.connect(gain);
-    if (panner) {
-      panner.pan.value = Math.max(-1, Math.min(1, pan));
-      gain.connect(panner);
-      panner.connect(master);
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan));
+      src.connect(f);
+      f.connect(g);
+      g.connect(p);
+      p.connect(master);
     } else {
-      gain.connect(master);
+      src.connect(f);
+      f.connect(g);
+      g.connect(master);
     }
-    src.start(t0);
-  }
-
-  // A footstep whose loudness falls with distance and whose stereo pan
-  // follows the step's direction from the thief.
-  function footstep(fromX, fromY, thiefX, thiefY, loud) {
-    if (!ensure() || muted) return;
-    const dx = fromX - thiefX;
-    const dy = fromY - thiefY;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 520) return;
-    const vol = loud * Math.max(0, 1 - dist / 520);
-    const pan = Math.max(-0.9, Math.min(0.9, dx / 360));
-    thud(vol, pan, 320);
+    src.start();
   }
 
   return {
-    unlock,
+    ensure,
     setMuted(m) {
       muted = m;
       if (master) master.gain.value = m ? 0 : 0.5;
@@ -94,37 +76,37 @@ export function createAudio() {
     isMuted() {
       return muted;
     },
-    guardStep(gx, gy, tx, ty) {
-      footstep(gx, gy, tx, ty, 0.5);
+    // A guard footstep: volume falls with distance, pan follows direction.
+    step(pan, vol) {
+      noiseBurst(0.09, vol, 420, pan);
     },
-    thiefStep(tx, ty) {
-      // The thief's own steps are quieter; sneaking is silent.
-      thud(0.12, 0, 420);
+    thiefStep() {
+      noiseBurst(0.06, 0.05, 300, 0);
     },
-    suspicionSting() {
-      tone(620, 0.28, 'sine', 0.16, 0, 880);
+    sting() {
+      tone(660, 0.16, 'sine', 0.16);
+      tone(880, 0.2, 'sine', 0.12, 0.08);
     },
-    spottedSting() {
-      tone(220, 0.5, 'sawtooth', 0.2, 0, 110);
-      tone(440, 0.4, 'square', 0.1, 0.05, 660);
+    spotted() {
+      tone(220, 0.28, 'square', 0.14, 0, 440);
+      tone(440, 0.3, 'sawtooth', 0.08, 0.05);
     },
-    alarmTone() {
-      tone(520, 0.22, 'square', 0.14, 0);
-      tone(392, 0.22, 'square', 0.14, 0.24);
-      tone(520, 0.22, 'square', 0.14, 0.48);
+    alarm() {
+      tone(520, 0.22, 'square', 0.12);
+      tone(392, 0.26, 'square', 0.12, 0.22);
     },
-    pickupChime() {
-      tone(880, 0.14, 'sine', 0.16, 0);
-      tone(1318, 0.22, 'sine', 0.16, 0.09);
+    pickup() {
+      tone(880, 0.1, 'sine', 0.14);
+      tone(1318, 0.18, 'sine', 0.12, 0.09);
     },
-    levelComplete() {
-      [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.3, 'triangle', 0.16, i * 0.11));
+    complete() {
+      [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.22, 'sine', 0.14, i * 0.11));
     },
-    winFanfare() {
-      [523, 659, 784, 1046, 1318, 1568].forEach((f, i) => tone(f, 0.42, 'triangle', 0.16, i * 0.13));
+    win() {
+      [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, 0.3, 'triangle', 0.15, i * 0.13));
     },
-    caughtBuzz() {
-      tone(180, 0.4, 'sawtooth', 0.18, 0, 90);
+    click() {
+      tone(700, 0.05, 'sine', 0.08);
     },
   };
 }

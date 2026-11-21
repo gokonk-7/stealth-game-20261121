@@ -1,40 +1,30 @@
-// Guard patrols and chases, camera sweeps, and the control panel.
-// One job: move the watchers and decide what they do next. Detection
-// itself (cones, line of sight, suspicion) lives in detection.js.
-import {
-  GUARD_CHASE_SPEED,
-  GUARD_CATCH_DISTANCE,
-  CHASE_GIVE_UP_SECONDS,
-  PANEL_HOLD_SECONDS,
-  PANEL_DISABLE_SECONDS,
-  CAMERA_ALERT_COOLDOWN,
-  SUSPICION_MAX,
-  SUSPICION_QUESTION,
-  ALARM_SPEED_FACTOR,
-  ALARM_CONE_FACTOR,
-  CONE_RANGE,
-  CAMERA_RANGE,
-} from './config.js';
-import { hasLineOfSight, updateWatcherSuspicion, guardConeHalfAngle, cameraConeHalfAngle } from './detection.js';
+// Guard and camera AI.
+// Guards walk patrol waypoints, stop and stare when they grow suspicious,
+// chase the last seen position when they spot the thief, and walk back to
+// their patrol when they lose the trail. Cameras never chase: their cone
+// sweeps from a fixed pivot, and being spotted by one raises the alarm.
+import { angleDiff, dist, circleHitsBlocker } from './detection.js';
+import { GUARD_CHASE } from './config.js';
 
-export function makeGuard(def, index) {
-  const [sx, sy] = def.waypoints[0];
+export function makeGuard(def) {
+  const [sx, sy] = def.path[0];
   return {
     kind: 'guard',
-    index,
     x: sx,
     y: sy,
-    dir: 0,
-    waypoints: def.waypoints.map(([x, y]) => ({ x, y })),
-    wpIndex: 1 % def.waypoints.length,
-    baseSpeed: def.speed,
+    angle: 0,
+    path: def.path,
+    wp: 1,
+    speed: def.speed,
+    range: def.range,
+    half: def.half,
     suspicion: 0,
-    mode: 'patrol', // patrol | chase | return | search
-    lastSeen: { x: sx, y: sy },
-    loseTimer: 0,
+    state: 'patrol',
+    lastSeen: null,
+    unseenTimer: 0,
     stepTimer: 0,
-    stepPhase: index * 0.37,
-    exitDuty: false, // alarm stage 2: this guard patrols the exit instead
+    active: def.active !== false,
+    home: { x: sx, y: sy },
   };
 }
 
@@ -43,190 +33,93 @@ export function makeCamera(def) {
     kind: 'camera',
     x: def.x,
     y: def.y,
-    baseDir: def.baseDir,
+    angle: def.base,
+    base: def.base,
     sweep: def.sweep,
-    range: def.range || CAMERA_RANGE,
-    speed: def.speed || 0.6,
-    phase: Math.random() * Math.PI * 2,
-    dir: def.baseDir,
+    sweepSpeed: def.speed,
+    range: def.range,
+    half: def.half,
     suspicion: 0,
+    lastSeen: null,
+    unseenTimer: 0,
     disabledUntil: 0,
-    cooldownUntil: 0,
-    tripped: false,
+    active: true,
   };
 }
 
-function moveToward(e, tx, ty, speed, dt, solids, radius) {
-  const dx = tx - e.x;
-  const dy = ty - e.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist < 0.5) return true;
-  const step = Math.min(dist, speed * dt);
-  const nx = e.x + (dx / dist) * step;
-  const ny = e.y + (dy / dist) * step;
-  e.dir = Math.atan2(dy, dx);
-  if (!hitsSolid(nx, e.y, radius, solids)) e.x = nx;
-  if (!hitsSolid(e.x, ny, radius, solids)) e.y = ny;
-  return dist <= step + 0.5;
+// Walk toward a point, sliding along walls (axis-separated movement).
+// Returns true when the target is reached.
+function moveToward(g, tx, ty, speed, dt, blockers) {
+  const dx = tx - g.x;
+  const dy = ty - g.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1) return true;
+  const step = Math.min(d, speed * dt);
+  const nx = g.x + (dx / d) * step;
+  const ny = g.y + (dy / d) * step;
+  g.angle = Math.atan2(dy, dx);
+  if (!circleHitsBlocker(nx, g.y, 12, blockers)) g.x = nx;
+  if (!circleHitsBlocker(g.x, ny, 12, blockers)) g.y = ny;
+  return d <= step + 1;
 }
 
-function hitsSolid(x, y, radius, solids) {
-  for (const s of solids) {
-    const cx = Math.max(s.x, Math.min(x, s.x + s.w));
-    const cy = Math.max(s.y, Math.min(y, s.y + s.h));
-    if ((x - cx) ** 2 + (y - cy) ** 2 < radius * radius) return true;
+function stepSound(g, dt, ctx) {
+  g.stepTimer -= dt;
+  if (g.stepTimer <= 0) {
+    g.stepTimer = 30 / (g.speed || 80);
+    const d = dist(g.x, g.y, ctx.thief.x, ctx.thief.y);
+    if (d < 520 && ctx.onStep) ctx.onStep(g, d);
   }
-  return false;
 }
 
-// One guard, one frame. Returns an event string the game loop acts on:
-// 'spotted' when suspicion first hits 100, 'caught' when the guard
-// touches the thief, 'question' when suspicion first crosses 50.
 export function updateGuard(g, dt, ctx) {
-  const { player, level, solids, alarm, time, audio } = ctx;
-  const speed = g.baseSpeed * (alarm >= 1 ? ALARM_SPEED_FACTOR : 1);
-  const range = CONE_RANGE * (alarm >= 1 ? ALARM_CONE_FACTOR : 1);
-  const events = [];
+  if (!g.active) return;
+  const speedMul = ctx.alarm === 0 ? 1 : ctx.alarm === 1 ? 1.15 : 1.3;
 
-  const wasQuestion = g.suspicion >= SUSPICION_QUESTION;
-  const seen = updateWatcherSuspicion(g, range, guardConeHalfAngle(), player, level, solids, alarm, dt);
-  if (!wasQuestion && g.suspicion >= SUSPICION_QUESTION && g.suspicion < SUSPICION_MAX) {
-    events.push('question');
+  if (g.state === 'chase') {
+    const target = g.lastSeen || g.home;
+    const arrived = moveToward(g, target.x, target.y, GUARD_CHASE * speedMul, dt, ctx.blockers);
+    stepSound(g, dt, ctx);
+    if (arrived && g.unseenTimer > 3) g.state = 'return';
+    return;
   }
 
-  if (g.suspicion >= SUSPICION_MAX && g.mode !== 'chase') {
-    g.mode = 'chase';
-    g.loseTimer = 0;
-    events.push('spotted');
-  }
-  if (seen === 'seen') {
-    g.lastSeen = { x: player.x, y: player.y };
-    g.loseTimer = 0;
+  if (g.state === 'suspicious') {
+    // Freeze and stare at the last seen spot while suspicion is high.
+    if (g.lastSeen) g.angle = Math.atan2(g.lastSeen.y - g.y, g.lastSeen.x - g.x);
+    if (g.suspicion < 30) g.state = 'patrol';
+    return;
   }
 
-  if (g.mode === 'patrol') {
-    const target = g.waypoints[g.wpIndex];
-    if (moveToward(g, target.x, target.y, speed, dt, solids, 13)) {
-      g.wpIndex = (g.wpIndex + 1) % g.waypoints.length;
-    }
-  } else if (g.mode === 'chase') {
-    if (seen === 'seen') {
-      moveToward(g, player.x, player.y, GUARD_CHASE_SPEED, dt, solids, 13);
-    } else {
-      g.loseTimer += dt;
-      if (g.loseTimer >= CHASE_GIVE_UP_SECONDS) {
-        g.mode = 'return';
-      } else {
-        moveToward(g, g.lastSeen.x, g.lastSeen.y, GUARD_CHASE_SPEED, dt, solids, 13);
-      }
-    }
-  } else if (g.mode === 'return') {
-    // Walk back to the nearest patrol waypoint, then resume the patrol.
+  if (g.state === 'return') {
+    // Walk back to the nearest waypoint, then resume the patrol.
     let best = 0;
-    let bestDist = Infinity;
-    g.waypoints.forEach((w, i) => {
-      const d = Math.hypot(w.x - g.x, w.y - g.y);
-      if (d < bestDist) {
-        bestDist = d;
+    let bd = Infinity;
+    g.path.forEach((p, i) => {
+      const d = dist(g.x, g.y, p[0], p[1]);
+      if (d < bd) {
+        bd = d;
         best = i;
       }
     });
-    g.wpIndex = best;
-    const target = g.waypoints[g.wpIndex];
-    if (moveToward(g, target.x, target.y, speed, dt, solids, 13)) {
-      g.mode = 'patrol';
-      g.suspicion = 0;
+    const arrived = moveToward(g, g.path[best][0], g.path[best][1], g.speed * speedMul, dt, ctx.blockers);
+    stepSound(g, dt, ctx);
+    if (arrived) {
+      g.wp = (best + 1) % g.path.length;
+      g.state = 'patrol';
     }
-  } else if (g.mode === 'search') {
-    // Alarm stage 2: converge on the last-known position, then hold there.
-    moveToward(g, g.lastSeen.x, g.lastSeen.y, speed, dt, solids, 13);
+    return;
   }
 
-  // A guard that touches the thief catches them, patrol or chase alike.
-  if (Math.hypot(player.x - g.x, player.y - g.y) <= GUARD_CATCH_DISTANCE) {
-    events.push('caught');
-  }
-
-  // Footsteps: a soft thud each stride, panned by direction from the thief.
-  g.stepTimer -= dt;
-  const stride = (g.mode === 'chase' ? 0.34 : 0.52) * (g.baseSpeed / speed);
-  if (g.stepTimer <= 0 && (g.mode !== 'patrol' || Math.hypot(g.x - g.waypoints[g.wpIndex].x, g.y - g.waypoints[g.wpIndex].y) > 1)) {
-    g.stepTimer = stride;
-    if (audio) audio.guardStep(g.x, g.y, player.x, player.y);
-  }
-  return events;
+  // Patrol: walk the waypoints in order, forever.
+  const wp = g.path[g.wp];
+  const arrived = moveToward(g, wp[0], wp[1], g.speed * speedMul, dt, ctx.blockers);
+  stepSound(g, dt, ctx);
+  if (arrived) g.wp = (g.wp + 1) % g.path.length;
 }
 
-// One camera, one frame. Cameras never chase: at full suspicion they trip
-// the alarm (once per cooldown) and reset. Returns 'tripped' or null.
 export function updateCamera(c, dt, ctx) {
-  const { player, level, solids, alarm, time } = ctx;
-  if (time < c.disabledUntil) {
-    c.suspicion = Math.max(0, c.suspicion - 20 * dt);
-    return null;
-  }
-  c.phase += dt * c.speed;
-  c.dir = c.baseDir + Math.sin(c.phase) * c.sweep;
-  const wasQuestion = c.suspicion >= SUSPICION_QUESTION;
-  updateWatcherSuspicion(c, c.range, cameraConeHalfAngle(), player, level, solids, alarm, dt);
-  if (!wasQuestion && c.suspicion >= SUSPICION_QUESTION && c.suspicion < SUSPICION_MAX) {
-    return 'question';
-  }
-  if (c.suspicion >= SUSPICION_MAX && time >= c.cooldownUntil) {
-    c.suspicion = 0;
-    c.cooldownUntil = time + CAMERA_ALERT_COOLDOWN;
-    return 'tripped';
-  }
-  return null;
+  if (!c.active) return;
+  if (ctx.now < c.disabledUntil) return; // powered down: cone parked, no sweep
+  c.angle = c.base + Math.sin(ctx.now * c.sweepSpeed) * c.sweep;
 }
-
-// The control panel: stand next to it and it charges; hold still long
-// enough and the nearest live camera goes dark for a while. Standing in
-// the open is the risk. Returns the camera disabled, or null.
-export function updatePanel(panel, player, cameras, dt, time) {
-  if (!panel) return null;
-  const dist = Math.hypot(player.x - panel.x, player.y - panel.y);
-  if (dist <= 48) {
-    panel.progress = Math.min(1, (panel.progress || 0) + dt / PANEL_HOLD_SECONDS);
-    if (panel.progress >= 1) {
-      panel.progress = 0;
-      let best = null;
-      let bestDist = Infinity;
-      for (const c of cameras) {
-        if (time < c.disabledUntil) continue;
-        const d = Math.hypot(c.x - panel.x, c.y - panel.y);
-        if (d < bestDist) {
-          bestDist = d;
-          best = c;
-        }
-      }
-      if (best) {
-        best.disabledUntil = time + PANEL_DISABLE_SECONDS;
-        return best;
-      }
-    }
-  } else {
-    panel.progress = 0;
-  }
-  return null;
-}
-
-// Alarm stage 2: every guard converges on the last-known position, and
-// the first guard takes up a patrol loop by the exit.
-export function raiseAlarmStage2(guards, exit) {
-  for (const g of guards) {
-    if (g.mode === 'patrol') g.mode = 'search';
-  }
-  const first = guards[0];
-  if (first && !first.exitDuty) {
-    first.exitDuty = true;
-    first.waypoints = [
-      { x: exit.x - 90, y: exit.y + exit.h / 2 },
-      { x: exit.x + exit.w + 90, y: exit.y + exit.h / 2 },
-    ];
-    first.wpIndex = 0;
-    first.mode = 'patrol';
-  }
-}
-
-export { hasLineOfSight };

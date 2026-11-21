@@ -4,15 +4,16 @@
 [![rank](https://make.fun/badge/best-stealth-game-20261121-1759/gokonk-7/stealth-game-20261121/rank.svg)](https://make.fun/bounty/best-stealth-game-20261121-1759/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=best-stealth-game-20261121-1759)
 [![reward](https://make.fun/badge/best-stealth-game-20261121-1759/gokonk-7/stealth-game-20261121/reward.svg)](https://make.fun/bounty/best-stealth-game-20261121-1759?utm_source=github&utm_medium=readme&utm_campaign=best-stealth-game-20261121-1759)
 
-Night at the Meridian Museum — a complete, original top-down stealth game that plays offline in a desktop browser from its own files. You are Wren, a cat burglar after the Starlight Opal. Slip past patrolling guards, mind their vision cones, hide behind display cases and curtains, dodge the sweeping security cameras, and reach the exit unseen. Three levels, a suspicion system that gives you a chance to recover, an alarm that escalates, synthesized footsteps that tell you where a guard is, and a ghost bonus for never being noticed.
+Night at the Meridian Museum — a complete top-down stealth game. Guide Wren the cat burglar through three museum wings, slip past patrolling guards and sweeping security cameras, grab the Starlight Opal, and reach the exit unseen. Runs offline in a desktop browser from its own files; all art is procedural Canvas 2D and all sounds are synthesized with WebAudio.
 
 ## Run it
 
 ```sh
 node serve.ts
+# open http://localhost:8080
 ```
 
-Then open http://localhost:8080 in desktop Chrome. WASD or arrow keys to move, Shift to sneak, click to walk somewhere, P to pause, M to mute, R to restart the level. No network requests: the game is static files under `game/`, all art is procedural Canvas 2D and all sound is synthesized with WebAudio.
+Move with WASD or the arrow keys (Shift to sneak, slower but harder to spot), or click anywhere to walk there. P pauses, M mutes, R restarts the wing. Hide in shadow, watch the vision cones, and mind the footsteps — you can hear a guard coming before you see one.
 
 ---
 

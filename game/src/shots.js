@@ -1,116 +1,87 @@
-// Screenshot staging: drive the REAL game state into a chosen moment
-// (move the thief, set a guard's suspicion, set the timer and score
-// through the same state the game plays with), then render one static
-// frame. Never fake pixels: every shot is the game itself, frozen.
-import { SUSPICION_MAX } from './config.js';
+// Deterministic screenshot stagings. Each shot drives the REAL game state —
+// the thief is moved, suspicion is set, the timer and score are set through
+// the same fields play uses — and then one static frame is rendered.
+// Never fake pixels: what the shot shows is what the game draws.
+export function stageShot(name, world) {
+  const S = world.state;
 
-// Stage the cover: Level 1 mid-play, Wren crouched behind a display case,
-// a guard's cone sweeping past just in front of her, the second guard
-// mid-patrol at the far end, suspicion ~35, timer ~112 s, score 150.
-function stageCover(game) {
-  game.startLevel(0);
-  const s = game.state;
-  s.player.x = 410;
-  s.player.y = 252;
-  s.player.dir = Math.PI / 2;
-  s.player.sneaking = true;
-  const g0 = s.guards[0];
-  g0.x = 470;
-  g0.y = 120;
-  g0.dir = Math.PI / 2 + 0.35; // cone sweeps just in front of Wren
-  g0.suspicion = 35;
-  const g1 = s.guards[1];
-  g1.x = 900;
-  g1.y = 600;
-  g1.dir = Math.PI;
-  g1.suspicion = 0;
-  s.loot[0].taken = true; // the Jade Scarab, +150
-  s.score = 150;
-  s.timer = 112;
-  s.time = 38;
+  if (name === 'cover') {
+    world.loadLevel(0);
+    // Wren crouched behind a display case; a guard's cone sweeps past just
+    // in front of her while the second guard patrols the far end.
+    S.thief.x = 330;
+    S.thief.y = 302;
+    S.thief.sneaking = true;
+    S.thief.angle = Math.PI;
+    S.guards[0].x = 560;
+    S.guards[0].y = 300;
+    S.guards[0].angle = Math.PI;
+    S.guards[0].suspicion = 35;
+    S.guards[1].x = 1000;
+    S.guards[1].y = 430;
+    S.guards[1].angle = Math.PI;
+    S.timeLeft = 112;
+    S.score = 150;
+    S.lootScore = 150;
+    S.loot[0].taken = true;
+    S.ghost = true;
+    S.screen = 'playing';
+  } else if (name === 'patrol') {
+    world.loadLevel(1);
+    // Two guards' cones crossing in the main hall; Wren in the dark gap
+    // between them (outside both cones' range and angle).
+    S.thief.x = 520;
+    S.thief.y = 430;
+    S.thief.sneaking = true;
+    S.thief.angle = -Math.PI / 2;
+    S.guards[0].x = 480;
+    S.guards[0].y = 300;
+    S.guards[0].angle = 0;
+    S.guards[0].suspicion = 28;
+    S.guards[1].x = 800;
+    S.guards[1].y = 480;
+    S.guards[1].angle = Math.PI;
+    S.guards[1].suspicion = 12;
+    S.timeLeft = 96;
+    S.score = 0;
+    S.screen = 'playing';
+  } else if (name === 'cameras') {
+    world.loadLevel(2);
+    // A camera sweep cone and a guard cone overlapping near the Opal pedestal;
+    // Wren at the control panel, alarm stage 1.
+    S.thief.x = 70;
+    S.thief.y = 360;
+    S.thief.sneaking = false;
+    S.thief.angle = 0;
+    S.cameras[0].angle = S.cameras[0].base + 0.5;
+    S.cameras[0].suspicion = 40;
+    S.guards[0].x = 700;
+    S.guards[0].y = 300;
+    S.guards[0].angle = (Math.PI * 3) / 4;
+    S.guards[0].suspicion = 22;
+    S.alarm = 1;
+    S.timeLeft = 140;
+    S.score = 300;
+    S.lootScore = 150;
+    S.loot[0].taken = true;
+    if (S.panel) S.panel.progress = 1.8;
+    S.screen = 'playing';
+  } else if (name === 'win') {
+    world.loadLevel(2);
+    // Level 3 complete: the Opal secured, 3 stars, ghost bonus, total score.
+    S.opalTaken = true;
+    S.loot.forEach((l) => {
+      l.taken = true;
+    });
+    S.timeLeft = 64;
+    S.ghost = true;
+    S.lootScore = 150;
+    S.levelScore = 640 + 500 + 150;
+    S.levelStars = 3;
+    S.score = 2740;
+    S.screen = 'levelComplete';
+  } else {
+    throw new Error(`unknown shot: ${name}`);
+  }
+  S.frozen = true;
 }
-
-// Stage the patrol shot: Level 2, two guards' cones crossing in the main
-// hall, Wren between them, the Gold Mask glinting on its pedestal.
-function stagePatrol(game) {
-  game.startLevel(1);
-  const s = game.state;
-  s.player.x = 640;
-  s.player.y = 402;
-  s.player.dir = -Math.PI / 2;
-  s.player.sneaking = true;
-  const g0 = s.guards[0];
-  g0.x = 480;
-  g0.y = 360;
-  g0.dir = 0;
-  g0.suspicion = 20;
-  const g1 = s.guards[1];
-  g1.x = 800;
-  g1.y = 440;
-  g1.dir = Math.PI;
-  g1.suspicion = 12;
-  const g2 = s.guards[2];
-  g2.x = 700;
-  g2.y = 90;
-  g2.dir = 0;
-  s.loot[1].taken = true; // the Ivory Figure, +150
-  s.score = 150;
-  s.timer = 96;
-  s.time = 84;
-}
-
-// Stage the cameras shot: Level 3, a camera sweep cone and a guard cone
-// overlapping near the Opal pedestal, Wren at the control panel, alarm 1.
-function stageCameras(game) {
-  game.startLevel(2);
-  const s = game.state;
-  s.player.x = 78;
-  s.player.y = 360;
-  s.player.dir = 0;
-  s.panel.progress = 0.6;
-  const cam = s.cameras[0];
-  cam.phase = 0; // pointing straight down at the Opal
-  cam.dir = cam.baseDir;
-  cam.suspicion = 60;
-  const g0 = s.guards[0];
-  g0.x = 660;
-  g0.y = 160;
-  g0.dir = Math.PI / 2;
-  g0.suspicion = 25;
-  s.alarm = 1;
-  s.loot[0].taken = true; // the Silver Astrolabe, +150
-  s.score = 150;
-  s.timer = 140;
-  s.time = 70;
-}
-
-// Stage the win shot: play Level 3's ending through the real code path —
-// take the Opal, then step onto the skylight exit — so the win screen is
-// the game's own, with 3 stars and the ghost bonus.
-function stageWin(game) {
-  game.startLevel(2);
-  const s = game.state;
-  s.timer = 200;
-  s.time = 10;
-  s.loot[0].taken = true;
-  s.score = 150;
-  s.stars = [3, 3, 0];
-  s.player.x = s.opal.x;
-  s.player.y = s.opal.y;
-  game.update(0.016); // collect the Opal through the real pickup path
-  s.player.x = s.exit.x + s.exit.w / 2;
-  s.player.y = s.exit.y + s.exit.h / 2;
-  game.update(0.016); // step onto the exit through the real finish path
-  s.time = 10; // keep the frame calm: no banner pulse mid-shot
-}
-
-export function stageShot(game, name) {
-  if (name === 'cover') stageCover(game);
-  else if (name === 'patrol') stagePatrol(game);
-  else if (name === 'cameras') stageCameras(game);
-  else if (name === 'win') stageWin(game);
-  else throw new Error(`unknown shot: ${name}`);
-  return game.state;
-}
-
-export { SUSPICION_MAX };

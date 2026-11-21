@@ -1,151 +1,147 @@
-// The three levels of Night at the Meridian Museum.
-// Plain data only, no logic: walls, cover, light pools, shadow, patrols,
-// cameras, loot, the panel, the Opal, the exit and the start. The border
-// walls are listed per level so the shape of each hall stays in one place.
-import { CANVAS_WIDTH, CANVAS_HEIGHT } from './config.js';
+// The three wings of the Meridian Museum. Pure data — no logic here.
+// Coordinates are canvas pixels (1280x720). The HUD bar covers y 0..56;
+// the museum floor runs from the north wall (y 56) to the south wall (y 696).
+// walls: solid rects that block movement and sight.
+// cover: tall furniture that blocks movement and sight; kind decides the drawing.
+// lights: pools where detection runs 1.5x (moonlight cool, lamp warm).
+// shadows: dark zones where detection runs 0.6x.
+// guards: patrol paths, speed px/s, cone range px, cone half-angle radians.
+// reserve: one extra guard, asleep until the alarm reaches stage 2.
+// cameras: fixed pivots sweeping a cone; they never chase, they raise the alarm.
+// panel: stand next to it for 3 s to power down the nearest camera for 8 s.
+// loot: optional side artefacts, +150 each. opal: the level-3 objective.
 
-const W = CANVAS_WIDTH;
-const H = CANVAS_HEIGHT;
-const T = 24; // border wall thickness
-
-function borderWalls() {
-  return [
-    { x: 0, y: 0, w: W, h: T },
-    { x: 0, y: H - T, w: W, h: T },
-    { x: 0, y: 0, w: T, h: H },
-    { x: W - T, y: 0, w: T, h: H },
-  ];
-}
-
-// Level 1 — The Grand Gallery. Wide marble hall, two slow patrols, long
-// display cases as cover, moonlight pools from tall windows.
-const LEVEL_1 = {
-  name: 'The Grand Gallery',
-  objective: 'Cross the gallery. Reach the service door unseen.',
-  timeLimit: 150,
-  start: { x: 70, y: 360 },
-  exit: { x: 1210, y: 322, w: 46, h: 76, label: 'Service Door' },
-  walls: borderWalls(),
-  cover: [
-    { x: 300, y: 180, w: 220, h: 42, kind: 'case' },
-    { x: 580, y: 180, w: 220, h: 42, kind: 'case' },
-    { x: 300, y: 498, w: 220, h: 42, kind: 'case' },
-    { x: 580, y: 498, w: 220, h: 42, kind: 'case' },
-    { x: 880, y: 170, w: 42, h: 42, kind: 'statue' },
-    { x: 880, y: 508, w: 42, h: 42, kind: 'statue' },
-  ],
-  lights: [
-    { x: 400, y: 60, r: 110, kind: 'moon' },
-    { x: 860, y: 60, r: 110, kind: 'moon' },
-    { x: 640, y: 660, r: 100, kind: 'lamp' },
-  ],
-  shadows: [
-    { x: 240, y: 300, w: 620, h: 120 },
-    { x: 940, y: 300, w: 220, h: 120 },
-  ],
-  guards: [
-    { waypoints: [[250, 120], [1030, 120]], speed: 70 },
-    { waypoints: [[1030, 600], [250, 600]], speed: 70 },
-  ],
-  cameras: [],
-  loot: [{ x: 640, y: 360, name: 'Jade Scarab' }],
-  opal: null,
-  panel: null,
-};
-
-// Level 2 — The Hall of Antiquities. Two routes: the main hall (shorter,
-// two guards crossing at the centre) or the balcony corridor (longer,
-// darker, one guard, more shadow).
-const LEVEL_2 = {
-  name: 'The Hall of Antiquities',
-  objective: 'Two routes. The dark one is longer — and safer.',
-  timeLimit: 180,
-  start: { x: 70, y: 620 },
-  exit: { x: 1180, y: 60, w: 60, h: 60, label: 'Stairwell' },
-  walls: [
-    ...borderWalls(),
-    { x: 240, y: 150, w: 24, h: 200 }, // balcony wall, leaves a gap at the top
-    { x: 1016, y: 370, w: 24, h: 200 }, // east partition, gap at the bottom
-  ],
-  cover: [
-    { x: 340, y: 290, w: 38, h: 38, kind: 'column' },
-    { x: 620, y: 290, w: 38, h: 38, kind: 'column' },
-    { x: 900, y: 290, w: 38, h: 38, kind: 'column' },
-    { x: 340, y: 430, w: 38, h: 38, kind: 'column' },
-    { x: 620, y: 430, w: 38, h: 38, kind: 'column' },
-    { x: 900, y: 430, w: 38, h: 38, kind: 'column' },
-    { x: 860, y: 540, w: 150, h: 62, kind: 'sarcophagus' },
-    { x: 240, y: 620, w: 240, h: 26, kind: 'curtain' },
-    { x: 760, y: 620, w: 240, h: 26, kind: 'curtain' },
-  ],
-  lights: [
-    { x: 640, y: 360, r: 150, kind: 'lamp' },
-    { x: 1080, y: 120, r: 90, kind: 'lamp' },
-  ],
-  shadows: [
-    { x: 40, y: 40, w: 1200, h: 100 }, // the dark balcony corridor
-    { x: 40, y: 560, w: 500, h: 120 },
-  ],
-  guards: [
-    { waypoints: [[300, 360], [980, 360]], speed: 85 },
-    { waypoints: [[300, 440], [980, 440]], speed: 85 },
-    { waypoints: [[260, 90], [1000, 90]], speed: 80 },
-  ],
-  cameras: [],
-  loot: [
-    { x: 500, y: 200, name: 'Gold Mask' },
-    { x: 1080, y: 620, name: 'Ivory Figure' },
-  ],
-  opal: null,
-  panel: null,
-};
-
-// Level 3 — The Vault Wing. Three guards, two sweeping cameras, a control
-// panel that kills the nearest camera for 8 seconds, and the Starlight Opal
-// on the central pedestal. Grabbing it trips the alarm at once.
-const LEVEL_3 = {
-  name: 'The Vault Wing',
-  objective: 'Take the Opal. Then run — quietly.',
-  timeLimit: 210,
-  start: { x: 70, y: 360 },
-  exit: { x: 600, y: 650, w: 80, h: 46, label: 'Skylight Window' },
-  walls: [
-    ...borderWalls(),
-    { x: 420, y: 240, w: 24, h: 160 },
-    { x: 836, y: 320, w: 24, h: 160 },
-  ],
-  cover: [
-    { x: 300, y: 140, w: 150, h: 42, kind: 'case' },
-    { x: 830, y: 140, w: 150, h: 42, kind: 'case' },
-    { x: 300, y: 538, w: 150, h: 42, kind: 'case' },
-    { x: 830, y: 538, w: 150, h: 42, kind: 'case' },
-    { x: 180, y: 320, w: 42, h: 42, kind: 'statue' },
-    { x: 1058, y: 320, w: 42, h: 42, kind: 'statue' },
-    { x: 560, y: 560, w: 60, h: 40, kind: 'crate' },
-    { x: 660, y: 560, w: 60, h: 40, kind: 'crate' },
-  ],
-  lights: [
-    { x: 640, y: 360, r: 130, kind: 'lamp' },
-    { x: 200, y: 100, r: 90, kind: 'lamp' },
-    { x: 1080, y: 100, r: 90, kind: 'lamp' },
-  ],
-  shadows: [
-    { x: 40, y: 480, w: 300, h: 180 },
-    { x: 940, y: 480, w: 300, h: 180 },
-    { x: 480, y: 40, w: 320, h: 80 },
-  ],
-  guards: [
-    { waypoints: [[260, 120], [1020, 120]], speed: 90 },
-    { waypoints: [[1020, 600], [260, 600]], speed: 90 },
-    { waypoints: [[1100, 200], [1100, 520]], speed: 85 },
-  ],
-  cameras: [
-    { x: 640, y: 34, baseDir: Math.PI / 2, sweep: 1.1, range: 260, speed: 0.55 },
-    { x: 1246, y: 360, baseDir: Math.PI, sweep: 1.0, range: 260, speed: 0.7 },
-  ],
-  loot: [{ x: 1080, y: 620, name: 'Silver Astrolabe' }],
-  opal: { x: 640, y: 360 },
-  panel: { x: 60, y: 360 },
-};
-
-export const LEVELS = [LEVEL_1, LEVEL_2, LEVEL_3];
+export const LEVELS = [
+  {
+    name: 'The Grand Gallery',
+    objective: 'Cross the gallery. Reach the service door unseen.',
+    timeLimit: 150,
+    walls: [
+      { x: 0, y: 56, w: 1280, h: 24 },
+      { x: 0, y: 696, w: 1280, h: 24 },
+      { x: 0, y: 56, w: 24, h: 664 },
+      { x: 1256, y: 56, w: 24, h: 274 },
+      { x: 1256, y: 390, w: 24, h: 330 },
+    ],
+    cover: [
+      { x: 300, y: 220, w: 180, h: 60, kind: 'case' },
+      { x: 800, y: 220, w: 180, h: 60, kind: 'case' },
+      { x: 300, y: 460, w: 180, h: 60, kind: 'case' },
+      { x: 800, y: 460, w: 180, h: 60, kind: 'case' },
+      { x: 600, y: 150, w: 44, h: 44, kind: 'statue' },
+      { x: 600, y: 520, w: 44, h: 44, kind: 'statue' },
+    ],
+    lights: [
+      { x: 400, y: 140, r: 95, tone: 'moon' },
+      { x: 880, y: 140, r: 95, tone: 'moon' },
+      { x: 640, y: 360, r: 110, tone: 'lamp' },
+    ],
+    shadows: [
+      { x: 100, y: 560, w: 380, h: 120 },
+      { x: 800, y: 560, w: 380, h: 120 },
+    ],
+    guards: [
+      { path: [[200, 300], [1080, 300]], speed: 70, range: 220, half: 0.56 },
+      { path: [[1080, 430], [200, 430]], speed: 70, range: 220, half: 0.56 },
+    ],
+    reserve: { path: [[1100, 300], [1100, 430]], speed: 90, range: 220, half: 0.56 },
+    cameras: [],
+    panel: null,
+    loot: [{ x: 640, y: 620, label: 'Jade Scarab' }],
+    opal: null,
+    start: { x: 80, y: 388 },
+    exit: { x: 1232, y: 330, w: 24, h: 60, label: 'SERVICE DOOR' },
+  },
+  {
+    name: 'The Hall of Antiquities',
+    objective: 'Two routes. The dark one is longer — and safer.',
+    timeLimit: 180,
+    walls: [
+      { x: 0, y: 56, w: 1280, h: 24 },
+      { x: 0, y: 696, w: 1280, h: 24 },
+      { x: 0, y: 56, w: 24, h: 664 },
+      { x: 1256, y: 56, w: 24, h: 664 },
+      { x: 24, y: 560, w: 276, h: 24 },
+      { x: 380, y: 560, w: 520, h: 24 },
+      { x: 980, y: 560, w: 276, h: 24 },
+    ],
+    cover: [
+      { x: 420, y: 220, w: 36, h: 36, kind: 'column' },
+      { x: 860, y: 220, w: 36, h: 36, kind: 'column' },
+      { x: 420, y: 420, w: 36, h: 36, kind: 'column' },
+      { x: 860, y: 420, w: 36, h: 36, kind: 'column' },
+      { x: 200, y: 92, w: 120, h: 28, kind: 'curtain' },
+      { x: 960, y: 92, w: 120, h: 28, kind: 'curtain' },
+      { x: 580, y: 330, w: 120, h: 64, kind: 'sarcophagus' },
+    ],
+    lights: [
+      { x: 640, y: 300, r: 130, tone: 'lamp' },
+      { x: 240, y: 140, r: 90, tone: 'moon' },
+      { x: 1040, y: 140, r: 90, tone: 'moon' },
+    ],
+    shadows: [
+      { x: 24, y: 584, w: 1232, h: 112 },
+      { x: 1040, y: 440, w: 200, h: 100 },
+    ],
+    guards: [
+      { path: [[300, 300], [980, 300]], speed: 85, range: 230, half: 0.56 },
+      { path: [[980, 480], [300, 480]], speed: 85, range: 230, half: 0.56 },
+      { path: [[200, 640], [1080, 640]], speed: 75, range: 220, half: 0.56 },
+    ],
+    reserve: { path: [[1080, 140], [1180, 240]], speed: 90, range: 220, half: 0.56 },
+    cameras: [],
+    panel: null,
+    loot: [
+      { x: 200, y: 130, label: 'Gold Mask' },
+      { x: 1080, y: 130, label: 'Ivory Figure' },
+    ],
+    opal: null,
+    start: { x: 80, y: 388 },
+    exit: { x: 1180, y: 80, w: 52, h: 52, label: 'STAIRWELL' },
+  },
+  {
+    name: 'The Vault Wing',
+    objective: 'Take the Opal. Then run — quietly.',
+    timeLimit: 210,
+    walls: [
+      { x: 0, y: 56, w: 1280, h: 24 },
+      { x: 0, y: 56, w: 24, h: 664 },
+      { x: 1256, y: 56, w: 24, h: 664 },
+      { x: 0, y: 696, w: 616, h: 24 },
+      { x: 664, y: 696, w: 616, h: 24 },
+    ],
+    cover: [
+      { x: 300, y: 200, w: 160, h: 56, kind: 'case' },
+      { x: 820, y: 200, w: 160, h: 56, kind: 'case' },
+      { x: 300, y: 480, w: 160, h: 56, kind: 'case' },
+      { x: 820, y: 480, w: 160, h: 56, kind: 'case' },
+      { x: 640, y: 180, w: 36, h: 36, kind: 'column' },
+      { x: 640, y: 520, w: 36, h: 36, kind: 'column' },
+      { x: 620, y: 340, w: 40, h: 40, kind: 'pedestal' },
+    ],
+    lights: [
+      { x: 640, y: 360, r: 150, tone: 'lamp' },
+      { x: 300, y: 120, r: 80, tone: 'moon' },
+      { x: 980, y: 120, r: 80, tone: 'moon' },
+    ],
+    shadows: [
+      { x: 80, y: 560, w: 300, h: 120 },
+      { x: 900, y: 560, w: 300, h: 120 },
+    ],
+    guards: [
+      { path: [[240, 300], [1040, 300]], speed: 90, range: 230, half: 0.56 },
+      { path: [[1040, 420], [240, 420]], speed: 90, range: 230, half: 0.56 },
+      { path: [[560, 130], [560, 590]], speed: 85, range: 230, half: 0.56 },
+    ],
+    reserve: { path: [[560, 600], [720, 600]], speed: 90, range: 220, half: 0.56 },
+    cameras: [
+      { x: 400, y: 80, base: Math.PI / 2, sweep: 0.7, speed: 0.5, range: 260, half: 0.49 },
+      { x: 880, y: 664, base: -Math.PI / 2, sweep: 0.7, speed: 0.42, range: 260, half: 0.49 },
+    ],
+    panel: { x: 48, y: 360 },
+    loot: [{ x: 1080, y: 120, label: 'Silver Astrolabe' }],
+    opal: { x: 640, y: 360 },
+    start: { x: 80, y: 388 },
+    exit: { x: 616, y: 672, w: 48, h: 24, label: 'SKYLIGHT' },
+  },
+];

@@ -1,8 +1,7 @@
-// Seeded random numbers (mulberry32) so staged screenshots and replays are
-// deterministic: the same seed always stages the same patrol jitter.
+// Seeded RNG (mulberry32) so floor variation and staging are reproducible.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function next() {
+  return function () {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -11,7 +10,10 @@ export function mulberry32(seed) {
   };
 }
 
-// Pick a value in [min, max) from a seeded stream.
-export function rangeFrom(rng, min, max) {
-  return min + rng() * (max - min);
+export function range(rng, a, b) {
+  return a + rng() * (b - a);
+}
+
+export function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
 }
